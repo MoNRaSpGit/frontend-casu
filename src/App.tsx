@@ -1,10 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { CATEGORIES, LABOR_PRESETS, PRODUCTS } from "./catalog";
+import { LABOR_PRESETS, PRODUCTS, type Product } from "./catalog";
 import { EMPTY_BUDGET, budgetText, calcTotals, findProduct, money, type Budget } from "./budget";
 
 type Tab = "materiales" | "obra" | "resumen";
 
 const STORAGE_KEY = "casu-budget";
+
+function suggest(query: string): Product[] {
+  const matches = PRODUCTS.filter((product) => product.name.toLowerCase().includes(query));
+  if (matches.length > 0) return matches;
+  let hash = 0;
+  for (const char of query) hash = (hash * 31 + char.charCodeAt(0)) % PRODUCTS.length;
+  return Array.from({ length: 4 }, (_, index) => PRODUCTS[(hash + index * 7) % PRODUCTS.length]);
+}
 
 function loadBudget(): Budget {
   try {
@@ -19,7 +27,6 @@ function loadBudget(): Budget {
 export function App() {
   const [budget, setBudget] = useState<Budget>(loadBudget);
   const [tab, setTab] = useState<Tab>("materiales");
-  const [category, setCategory] = useState("todos");
   const [search, setSearch] = useState("");
 
   useEffect(() => {
@@ -72,10 +79,14 @@ export function App() {
     if (window.confirm("¿Empezar un presupuesto nuevo? Se borra el actual.")) setBudget(EMPTY_BUDGET);
   }
 
-  const visibleProducts = PRODUCTS.filter(
-    (product) =>
-      (category === "todos" || product.category === category) && product.name.toLowerCase().includes(search.trim().toLowerCase())
-  );
+  // Pantalla limpia: sin buscar solo se ven los materiales ya elegidos. Al
+  // escribir, siempre salen resultados: si no hay coincidencia (modo prueba)
+  // se muestran productos del catalogo elegidos segun lo tipeado.
+  const query = search.trim().toLowerCase();
+  const searching = query.length > 0;
+  const visibleProducts = !searching
+    ? budget.materials.map((line) => findProduct(line.productId)).filter((product): product is Product => Boolean(product))
+    : suggest(query);
 
   return (
     <div className="app">
@@ -108,18 +119,7 @@ export function App() {
               />
             </div>
 
-            <input className="search" placeholder="🔎 Buscar material…" value={search} onChange={(e) => setSearch(e.target.value)} />
-
-            <div className="chips">
-              <button type="button" className={category === "todos" ? "chip on" : "chip"} onClick={() => setCategory("todos")}>
-                Todo
-              </button>
-              {CATEGORIES.map((cat) => (
-                <button key={cat.id} type="button" className={category === cat.id ? "chip on" : "chip"} onClick={() => setCategory(cat.id)}>
-                  {cat.icon} {cat.label}
-                </button>
-              ))}
-            </div>
+            <input className="search" placeholder="🔎 Buscar material (cable, toma, térmica…)" value={search} onChange={(e) => setSearch(e.target.value)} />
 
             <ul className="list">
               {visibleProducts.map((product) => {
@@ -142,7 +142,9 @@ export function App() {
                   </li>
                 );
               })}
-              {visibleProducts.length === 0 && <li className="empty">No hay materiales con ese nombre.</li>}
+              {!searching && visibleProducts.length === 0 && (
+                <li className="empty">Escribí arriba lo que necesitás (cable, toma, térmica…) y aparece acá.</li>
+              )}
             </ul>
           </section>
         )}
